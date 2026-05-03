@@ -18,8 +18,8 @@ logger = get_logger(__name__)
 COMPLEXITY_WEIGHTS = {
     "PromptMap": 1,
     "CipherChat": 3,
-    "PAIR": 5,
-    "Composite": 7,
+    "PAIR": 7,
+    "Composite": 5,
 }
 
 
