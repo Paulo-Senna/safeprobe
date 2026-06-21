@@ -255,6 +255,36 @@ def load_jailbreakbench(
     )
 
 
+
+#UNIFIEDBENCH ------------------------------------------
+def load_unifiedbench(
+    max_samples: Optional[int] = None,
+    category: Optional[str] = None,
+) -> List[Dict]:
+    """Load the UnifiedBench dataset from HuggingFace (labp2d/UnifiedBench)."""
+    try:
+        from datasets import load_dataset as hf_load
+        ds = hf_load("labp2d/UnifiedBench", split="train")
+        if category:
+            ds = ds.filter(lambda x: x["Category"] == category)
+        samples = []
+        for item in ds:
+            samples.append({
+                "goal": item["Goal"],
+                "target": item["Target"],
+                "category": item["Category"],
+                "source": item["Source"],
+            })
+            if max_samples and len(samples) >= max_samples:
+                break
+        return samples
+    except Exception as e:
+        raise FileNotFoundError(
+            f"UnifiedBench dataset not found. Install `datasets`: pip install datasets\n{e}"
+        )
+
+
+
 def load_mixed(mix: List[Dict]) -> List[Dict]:
     """Load samples from multiple datasets and combine them.
 
@@ -271,9 +301,9 @@ def load_mixed(mix: List[Dict]) -> List[Dict]:
         combined.extend(load_dataset(name, max_samples=n))
     return combined
 
-
+#verificar integração do unifiedbench na função
 def load_dataset(name: str, path: Optional[str] = None, max_samples: Optional[int] = None,
-                 mix: Optional[List[Dict]] = None) -> List[Dict]:
+                 mix: Optional[List[Dict]] = None, category: Optional[str] = None) -> List[Dict]:
     """
     Load a named dataset.
 
@@ -297,7 +327,11 @@ def load_dataset(name: str, path: Optional[str] = None, max_samples: Optional[in
         return load_harmbench(path=path, max_samples=max_samples)
     elif name_lower in ("jailbreakbench", "jbb"):
         return load_jailbreakbench(path=path, max_samples=max_samples)
+    elif name_lower in ("unifiedbench", "ub"):
+        return load_unifiedbench(max_samples=max_samples, category=category)
     elif path:
         return _load_local(path, max_samples)
     else:
         return _load_local(name, max_samples)
+                     
+                     
