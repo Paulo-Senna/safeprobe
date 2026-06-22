@@ -10,6 +10,3 @@ from safeprobe.config import Config, load_config
 SafeProbeConfig = Config
 
 __all__ = ["SafeProbeConfig", "Config", "load_config"]
-
-
-from .core import GPTFuzzer, PromptNode
