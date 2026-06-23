@@ -1,103 +1,196 @@
-
-"""GPTFuzz attack — fazer a descrição inicial aqui """
-
+"""GPTFuzz attack — Fuzzing-based jailbreak template generation.
+Requires the `gptfuzzer` package:
+    pip install gptfuzzer
+"""
+import logging
 import json
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
-import pandas as pd
-from typing import Any, Dict
-
-#from gptfuzzer.fuzzer.selection import MCTSExploreSelectPolicy
-#from gptfuzzer.fuzzer.mutator import (
-#    MutateRandomSinglePolicy, OpenAIMutatorCrossOver, OpenAIMutatorExpand,
-#    OpenAIMutatorGenerateSimilar, OpenAIMutatorRephrase, OpenAIMutatorShorten)
-#from gptfuzzer.fuzzer import GPTFuzzer
-#from gptfuzzer.llm import OpenAILLM
-#from gptfuzzer.utils.predict import RoBERTaPredictor
-
-from safeprobe.config import Config 
-from safeprobe.utils.logging import get_logger
-
-#puxar o UnifiedBench-----------------------------------------------
-from safeprobe.datasets import prompt.py
+import time
+import csv
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 logger = get_logger(__name__)
 
+if TYPE_CHECKING:
+    #não sei se como em meti o from aqui ta certo
+    from .gptfuzz.mutator import Mutator, MutatePolicy
+    from .gptfuzz.selection import SelectPolicy
+
+#from gptfuzzer.llm import LLM, LocalLLM --> isso que vai puxar o modelo ?
+#from gptfuzzer.utils.template import synthesis_message
+#from gptfuzzer.utils.predict import Predictor
+import warnings
+
+
+class PromptNode:
+    def __init__(self,
+                 fuzzer: 'GPTFuzzer',
+                 prompt: str,
+                 response: str = None,
+                 results: 'list[int]' = None,
+                 parent: 'PromptNode' = None,
+                 mutator: 'Mutator' = None):
+        self.fuzzer: 'GPTFuzzer' = fuzzer
+        self.prompt: str = prompt
+        self.response: str = response
+        self.results: 'list[int]' = results
+        self.visited_num = 0
+
+        self.parent: 'PromptNode' = parent
+        self.mutator: 'Mutator' = mutator
+        self.child: 'list[PromptNode]' = []
+        self.level: int = 0 if parent is None else parent.level + 1
+
+        self._index: int = None
+
+    @property
+    def index(self):
+        return self._index
+
+    @index.setter
+    def index(self, index: int):
+        self._index = index
+        if self.parent is not None:
+            self.parent.child.append(self)
+
+    @property
+    def num_jailbreak(self):
+        return sum(self.results)
+
+    @property
+    def num_reject(self):
+        return len(self.results) - sum(self.results)
+
+    @property
+    def num_query(self):
+        return len(self.results)
+
 
 class GPTFuzzAttack:
-    def __init__(self, config=None):
-        self.name = "GPTFuzz"
-        self.description = "Fuzzing-based jailbreak template generation (LLM-Fuzzer)"
-        self.config = config or Config()
+    def __init__(self,
+                 questions: 'list[str]',
+                 target: 'LLM',
+                 predictor: 'Predictor',
+                 initial_seed: 'list[str]',
+                 mutate_policy: 'MutatePolicy',
+                 select_policy: 'SelectPolicy',
+                 max_query: int = -1,
+                 max_jailbreak: int = -1,
+                 max_reject: int = -1,
+                 max_iteration: int = -1,
+                 energy: int = 1,
+                 result_file: str = None,
+                 generate_in_batch: bool = False,
+                 ):
 
-    def get_default_parameters(self) -> Dict[str, Any]:
-        return {
-            "openai_key":    self.config.get_api_key("openai"),
-            "model_path":    "gpt-3.5-turbo",
-            "target_model":  self.config.target_model,
-            "seed_path":     "datasets/prompts/GPTFuzzer.csv",
-            "max_query":     500,
-            "max_jailbreak": 1,
-            "energy":        1,
-            "dataset":       "unifiedbench",
-            "sample_size":   self.config.sample_size or 50,
-            "category":      None,
-            "output_file":   str(self.config.results_dir / "gptfuzz_results.json"),
-        }
+        self.questions: 'list[str]' = questions
+        self.target: LLM = target
+        self.predictor = predictor
+        self.prompt_nodes: 'list[PromptNode]' = [
+            PromptNode(self, prompt) for prompt in initial_seed
+        ]
+        self.initial_prompts_nodes = self.prompt_nodes.copy()
 
-    def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        for i, prompt_node in enumerate(self.prompt_nodes):
+            prompt_node.index = i
+
+        self.mutate_policy = mutate_policy
+        self.select_policy = select_policy
+
+        self.current_query: int = 0
+        self.current_jailbreak: int = 0
+        self.current_reject: int = 0
+        self.current_iteration: int = 0
+
+        self.max_query: int = max_query
+        self.max_jailbreak: int = max_jailbreak
+        self.max_reject: int = max_reject
+        self.max_iteration: int = max_iteration
+
+        self.energy: int = energy
+        if result_file is None:
+            result_file = f'results-{time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())}.csv'
+
+        self.raw_fp = open(result_file, 'w', buffering=1)
+        self.writter = csv.writer(self.raw_fp)
+        self.writter.writerow(
+            ['index', 'prompt', 'response', 'parent', 'results'])
+
+        self.generate_in_batch = False
+        if len(self.questions) > 0 and generate_in_batch is True:
+            self.generate_in_batch = True
+            if isinstance(self.target, LocalLLM):
+                warnings.warn("IMPORTANT! Hugging face inference with batch generation has the problem of consistency due to pad tokens. We do not suggest doing so and you may experience (1) degraded output quality due to long padding tokens, (2) inconsistent responses due to different number of padding tokens during reproduction. You should turn off generate_in_batch or use vllm batch inference.")
+        self.setup()
+
+    def setup(self):
+        self.mutate_policy.fuzzer = self
+        self.select_policy.fuzzer = self
+        logging.basicConfig(
+            level=logging.INFO, format='%(asctime)s %(message)s', datefmt='[%H:%M:%S]')
+
+    def is_stop(self):
+        checks = [
+            ('max_query', 'current_query'),
+            ('max_jailbreak', 'current_jailbreak'),
+            ('max_reject', 'current_reject'),
+            ('max_iteration', 'current_iteration'),
+        ]
+        return any(getattr(self, max_attr) != -1 and getattr(self, curr_attr) >= getattr(self, max_attr) for max_attr, curr_attr in checks)
+
+    def run(self):
+        logging.info("Fuzzing started!")
         try:
-            # carrega questions do UnifiedBench via SafeProbe
-            from safeprobe.datasets.prompts import load_dataset
-            raw = load_dataset(
-                params.get("dataset", "unifiedbench"),
-                max_samples=params.get("sample_size"),
-                category=params.get("category"),
-            )
-            questions = [d["goal"] for d in raw if d.get("goal")]
-            logger.info(f"GPTFuzz: {len(questions)} questions carregadas")
+            while not self.is_stop():
+                seed = self.select_policy.select()
+                mutated_results = self.mutate_policy.mutate_single(seed)
+                self.evaluate(mutated_results)
+                self.update(mutated_results)
+                self.log()
+        except KeyboardInterrupt:
+            logging.info("Fuzzing interrupted by user!")
 
-            # igual ao gptfuzz.py original
-            initial_seed = pd.read_csv(params["seed_path"])["text"].tolist()
+        logging.info("Fuzzing finished!")
+        self.raw_fp.close()
 
-            openai_model  = OpenAILLM(params["model_path"], params["openai_key"])
-            target_model  = OpenAILLM(params["target_model"], params["openai_key"])
-            roberta_model = RoBERTaPredictor("hubert233/GPTFuzz", device="cpu")
+    def evaluate(self, prompt_nodes: 'list[PromptNode]'):
+        for prompt_node in prompt_nodes:
+            responses = []
+            messages = []
+            for question in self.questions:
+                message = synthesis_message(question, prompt_node.prompt)
+                if message is None:  # The prompt is not valid
+                    prompt_node.response = []
+                    prompt_node.results = []
+                    break
+                if not self.generate_in_batch:
+                    response = self.target.generate(message)
+                    responses.append(response[0] if isinstance(
+                        response, list) else response)
+                else:
+                    messages.append(message)
+            else:
+                if self.generate_in_batch:
+                    responses = self.target.generate_batch(messages)
+                prompt_node.response = responses
+                prompt_node.results = self.predictor.predict(responses)
 
-            fuzzer = GPTFuzzer(
-                questions=questions,
-                target=target_model,
-                predictor=roberta_model,
-                initial_seed=initial_seed,
-                mutate_policy=MutateRandomSinglePolicy([
-                    OpenAIMutatorCrossOver(openai_model, temperature=1.0),
-                    OpenAIMutatorExpand(openai_model, temperature=1.0),
-                    OpenAIMutatorGenerateSimilar(openai_model, temperature=1.0),
-                    OpenAIMutatorRephrase(openai_model, temperature=1.0),
-                    OpenAIMutatorShorten(openai_model, temperature=1.0)],
-                    concatentate=True,
-                ),
-                select_policy=MCTSExploreSelectPolicy(),
-                energy=params.get("energy", 1),
-                max_jailbreak=params.get("max_jailbreak", 1),
-                max_query=params.get("max_query", 500),
-                generate_in_batch=False,
-            )
+    def update(self, prompt_nodes: 'list[PromptNode]'):
+        self.current_iteration += 1
 
-            fuzzer.run()
+        for prompt_node in prompt_nodes:
+            if prompt_node.num_jailbreak > 0:
+                prompt_node.index = len(self.prompt_nodes)
+                self.prompt_nodes.append(prompt_node)
+                self.writter.writerow([prompt_node.index, prompt_node.prompt,
+                                       prompt_node.response, prompt_node.parent.index, prompt_node.results])
 
-            out = params.get("output_file", "gptfuzz_results.json")
-            os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-            with open(out, "w") as f:
-                json.dump([], f)
+            self.current_jailbreak += prompt_node.num_jailbreak
+            self.current_query += prompt_node.num_query
+            self.current_reject += prompt_node.num_reject
 
-            logger.info("GPTFuzz concluído")
-            return {
-                "technique":   self.name,
-                "success":     True,
-                "output_file": out,
-            }
+        self.select_policy.update(prompt_nodes)
 
-        except Exception as exc:
-            logger.error(f"GPTFuzz falhou: {exc}", exc_info=True)
-            return {"technique": self.name, "success": False, "error": str(exc)}
+    def log(self):
+        logging.info(
+            f"Iteration {self.current_iteration}: {self.current_jailbreak} jailbreaks, {self.current_reject} rejects, {self.current_query} queries")
