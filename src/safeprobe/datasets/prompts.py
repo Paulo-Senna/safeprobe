@@ -258,11 +258,22 @@ def load_jailbreakbench(
 
 #UNIFIEDBENCH ------------------------------------------
 def load_unifiedbench(
+    path: Optional[str] = None,
     max_samples: Optional[int] = None,
     category: Optional[str] = None,
 ) -> List[Dict]:
-    """Load the UnifiedBench dataset from HuggingFace (labp2d/UnifiedBench)."""
-    try:
+    """Load the UnifiedBench behaviors dataset (810 behaviors, 7 categories).
+
+    (AdvBench + Harmbench + Jailbreakbench + new Taxonomy)
+    
+    Reference:
+    
+    Args:
+    
+    Returns:
+        List of dicts with keys: 'goal', 'target', 'category', 'source'.
+    """
+    
         from datasets import load_dataset as hf_load
         ds = hf_load("labp2d/UnifiedBench", split="train")
         if category:
@@ -278,9 +289,12 @@ def load_unifiedbench(
             if max_samples and len(samples) >= max_samples:
                 break
         return samples
+        
     except Exception as e:
         raise FileNotFoundError(
-            f"UnifiedBench dataset not found. Install `datasets`: pip install datasets\n{e}"
+            "UnifiedBench dataset not found. Options:\n"
+            " 1. pip install datasets (loads from HuggingFace)\n"
+            " 2. Download from https://huggingface.co/datasets/labp2d/UnifiedBench"
         )
 
 
@@ -308,7 +322,7 @@ def load_dataset(name: str, path: Optional[str] = None, max_samples: Optional[in
     Load a named dataset.
 
     Args:
-        name: Dataset name ('advbench', 'harmbench', 'jailbreakbench', 'mixed', or path).
+        name: Dataset name ('advbench', 'harmbench', 'jailbreakbench', 'unifiedbench', 'mixed', or path).
         path: Optional explicit file path.
         max_samples: Maximum number of samples.
         mix: Required when name='mixed'. List of {'name': ..., 'samples': ...} dicts.
@@ -328,7 +342,7 @@ def load_dataset(name: str, path: Optional[str] = None, max_samples: Optional[in
     elif name_lower in ("jailbreakbench", "jbb"):
         return load_jailbreakbench(path=path, max_samples=max_samples)
     elif name_lower in ("unifiedbench", "ub"):
-        return load_unifiedbench(max_samples=max_samples, category=category)
+        return load_unifiedbench(path=path, max_samples=max_samples)
     elif path:
         return _load_local(path, max_samples)
     else:
