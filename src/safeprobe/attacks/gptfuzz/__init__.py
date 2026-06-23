@@ -1,3 +1,2 @@
-from .core import GPTFuzzer, PromptNode
-
+from .attack import FuzzAttack
 __all__ = ["FuzzAttack"]
