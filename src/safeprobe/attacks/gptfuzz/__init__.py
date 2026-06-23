@@ -1,2 +1,3 @@
-from .attack import FuzzAttack
-__all__ = ["FuzzAttack"]
+from .attack import GPTFuzzAttack
+
+__all__ = ["GPTFuzzAttack"]
