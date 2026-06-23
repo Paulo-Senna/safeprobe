@@ -265,15 +265,21 @@ def load_unifiedbench(
     """Load the UnifiedBench behaviors dataset (810 behaviors, 7 categories).
 
     (AdvBench + Harmbench + Jailbreakbench + new Taxonomy)
-    
+
     Reference:
-    
+
     Args:
-    
+        path: Optional local file path.
+        max_samples: Maximum number of samples.
+        category: Filter by Category column value.
+
     Returns:
         List of dicts with keys: 'goal', 'target', 'category', 'source'.
     """
-    
+    if path and Path(path).exists():
+        return _load_local(path, max_samples)
+
+    try:
         from datasets import load_dataset as hf_load
         ds = hf_load("labp2d/UnifiedBench", split="train")
         if category:
@@ -289,7 +295,7 @@ def load_unifiedbench(
             if max_samples and len(samples) >= max_samples:
                 break
         return samples
-        
+
     except Exception as e:
         raise FileNotFoundError(
             "UnifiedBench dataset not found. Options:\n"
@@ -347,5 +353,3 @@ def load_dataset(name: str, path: Optional[str] = None, max_samples: Optional[in
         return _load_local(path, max_samples)
     else:
         return _load_local(name, max_samples)
-                     
-                     
