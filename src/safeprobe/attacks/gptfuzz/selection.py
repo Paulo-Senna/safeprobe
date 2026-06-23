@@ -1,8 +1,8 @@
 import random
 import numpy as np
 
-from .attacks import FuzzAttack
-#from gptfuzzer.fuzzer import GPTFuzzer, PromptNode
+from .attacks.gptfuzz import GPTFuzzer, PromptNode
+
 
 class SelectPolicy:
     def __init__(self, fuzzer: GPTFuzzer):
