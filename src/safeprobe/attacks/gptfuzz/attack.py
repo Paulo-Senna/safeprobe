@@ -7,16 +7,19 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 import pandas as pd
 from typing import Any, Dict
 
-from gptfuzzer.fuzzer.selection import MCTSExploreSelectPolicy
-from gptfuzzer.fuzzer.mutator import (
-    MutateRandomSinglePolicy, OpenAIMutatorCrossOver, OpenAIMutatorExpand,
-    OpenAIMutatorGenerateSimilar, OpenAIMutatorRephrase, OpenAIMutatorShorten)
-from gptfuzzer.fuzzer import GPTFuzzer
-from gptfuzzer.llm import OpenAILLM
-from gptfuzzer.utils.predict import RoBERTaPredictor
+#from gptfuzzer.fuzzer.selection import MCTSExploreSelectPolicy
+#from gptfuzzer.fuzzer.mutator import (
+#    MutateRandomSinglePolicy, OpenAIMutatorCrossOver, OpenAIMutatorExpand,
+#    OpenAIMutatorGenerateSimilar, OpenAIMutatorRephrase, OpenAIMutatorShorten)
+#from gptfuzzer.fuzzer import GPTFuzzer
+#from gptfuzzer.llm import OpenAILLM
+#from gptfuzzer.utils.predict import RoBERTaPredictor
 
-from safeprobe.config import Config
+from safeprobe.config import Config 
 from safeprobe.utils.logging import get_logger
+
+#puxar o UnifiedBench-----------------------------------------------
+from safeprobe.datasets import prompt.py
 
 logger = get_logger(__name__)
 
