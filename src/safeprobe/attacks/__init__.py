@@ -9,5 +9,6 @@ from .promptmap.attack import PromptMapAttack
 from .pair.attack import PAIRAttack
 from .cipherchat.attack import CipherChatAttack
 from .composite.attack import CompositeAttack
+from .fuzz.attack import FuzzAttack
 
-__all__ = ["PromptMapAttack", "PAIRAttack", "CipherChatAttack", "CompositeAttack"]
+__all__ = ["PromptMapAttack", "PAIRAttack", "CipherChatAttack", "CompositeAttack", "FuzzAttack"]
