@@ -1,9 +1,8 @@
 import random
-#from .core import GPTFuzzer, PromptNode
-from .attacks import FuzzAttack
-from gptfuzzer.utils.openai import openai_request
-from gptfuzzer.utils.template import QUESTION_PLACEHOLDER
-from gptfuzzer.llm import OpenAILLM, LLM
+from .attacks.gptfuzz import GPTFuzzer, PromptNode
+#from gptfuzzer.utils.openai import openai_request
+#from gptfuzzer.utils.template import QUESTION_PLACEHOLDER
+#from gptfuzzer.llm import OpenAILLM, LLM
 
 
 class Mutator:
